@@ -601,10 +601,10 @@ function renderDetail() {
     ${phasesHtml}
     <div class="card memo-area">
       <h2>✍️ 気づきメモ</h2>
-      <p class="note" style="margin-bottom:8px">壁打ちや賢者対話で生まれた気づきをここに。あとで読書メモ（Obsidian）に持ち帰る。</p>
+      <p class="note" style="margin-bottom:8px">壁打ちや賢者対話で生まれた気づきをここに。「Obsidian用にコピー」で進捗つきログになるので、Claudeに貼れば読書メモ（表紙ノート）の「💬 対話読書ログ」に追記してもらえる。</p>
       <textarea id="in-memo" placeholder="対話して気づいたこと・明日やること">${esc(b.memo || "")}</textarea>
       <div class="memo-save">
-        <button class="btn-ghost" onclick="copyMemo()">メモをコピー</button>
+        <button class="btn-ghost" onclick="copyMemo()">Obsidian用にコピー</button>
         <button class="btn-primary" onclick="saveMemo()">保存</button>
       </div>
     </div>
@@ -652,12 +652,21 @@ function saveMemo() {
   toast("メモを保存しました");
 }
 
+function progressLine(b) {
+  return PHASES.map(p => {
+    const done = p.prompts.filter(pr => b.done && b.done[pr.id]).length;
+    return `${p.icon}${done}/${p.prompts.length}`;
+  }).join(" ｜ ");
+}
+
 async function copyMemo() {
   const b = state.books.find(x => x.id === currentBookId);
   const memo = document.getElementById("in-memo").value.trim();
   if (!memo) { toast("メモが空です"); return; }
-  const ok = await copyText(`## 『${b.title}』対話読書メモ\n\n${memo}`);
-  if (ok) toast("メモをコピーしました");
+  const today = new Date().toISOString().slice(0, 10);
+  const text = `## 『${b.title}』対話読書ログ（${today}）\n**進捗**: ${progressLine(b)}\n\n${memo}`;
+  const ok = await copyText(text);
+  if (ok) toast("コピーしました。Claudeに貼れば読書メモに追記できます");
 }
 
 function removeBook() {
@@ -747,6 +756,29 @@ async function copyText(text) {
     return ok;
   }
 }
+
+/* ============ URLパラメータで本を追加 (?add=書名&author=著者&status=done) ============ */
+(function handleAddParam() {
+  const params = new URLSearchParams(location.search);
+  const title = (params.get("add") || "").trim();
+  if (!title) return;
+  history.replaceState(null, "", location.pathname);
+  if (state.books.some(b => b.title === title)) {
+    toast(`『${title}』は既に本棚にあります`);
+    return;
+  }
+  const status = ["tsundoku", "reading", "done"].includes(params.get("status")) ? params.get("status") : "done";
+  state.books.unshift({
+    id: Date.now().toString(36),
+    title,
+    author: (params.get("author") || "").trim(),
+    status,
+    done: {}, memo: "",
+    added: new Date().toISOString().slice(0, 10),
+  });
+  save();
+  toast(`『${title}』を本棚に追加しました`);
+})();
 
 renderShelf();
 </script>
