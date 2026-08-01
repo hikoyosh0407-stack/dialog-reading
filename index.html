@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>対話読書</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --border: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --accent-soft: #cde2fb;
+  --accent-deep: #1c5cab;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --warn: #fab219;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10);
+    --accent: #3987e5;
+    --accent-soft: #184f95;
+    --accent-deep: #86b6ef;
+    --good: #0ca30c;
+    --good-text: #4fc44f;
+    --warn: #fab219;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif;
+  background: var(--page);
+  color: var(--ink);
+  min-height: 100vh;
+  padding-bottom: calc(70px + env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+header {
+  padding: calc(14px + env(safe-area-inset-top)) 16px 10px;
+  text-align: center;
+}
+header h1 { font-size: 17px; font-weight: 700; letter-spacing: .04em; }
+header .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+main { max-width: 560px; margin: 0 auto; padding: 0 14px; }
+.view { display: none; }
+.view.active { display: block; }
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.card h2 { font-size: 14px; margin-bottom: 8px; }
+.card p.note { font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+
+/* 本棚 */
+.book-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--grid);
+  cursor: pointer;
+}
+.book-row:last-child { border-bottom: none; }
+.book-main { flex: 1; min-width: 0; }
+.book-title { font-size: 14px; font-weight: 600; line-height: 1.4; }
+.book-author { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+}
+.badge.tsundoku { background: var(--accent-soft); color: var(--accent-deep); border-color: transparent; }
+.badge.reading  { background: var(--warn); color: #4d3600; border-color: transparent; }
+.badge.done     { background: var(--good); color: #fff; border-color: transparent; }
+.book-prog { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+.add-form { display: flex; flex-direction: column; gap: 8px; }
+input[type=text], textarea, select {
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--ink);
+}
+textarea { min-height: 72px; line-height: 1.6; }
+button {
+  font: inherit;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 11px 16px;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  font-size: 13px;
+  padding: 8px 14px;
+}
+.btn-danger { background: transparent; color: #c33; border: 1px solid #c33; font-size: 12px; padding: 7px 12px; }
+
+/* 詳細 */
+.detail-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+.detail-head .back {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.detail-title { font-size: 16px; font-weight: 700; line-height: 1.4; flex: 1; }
+.status-row { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.status-row button {
+  flex: 1;
+  min-width: 70px;
+  font-size: 12px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--ink-2);
+}
+.status-row button.on { background: var(--accent); color: #fff; border-color: transparent; }
+
+.phase { margin-bottom: 16px; }
+.phase-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.phase-desc { font-size: 11px; color: var(--muted); margin-bottom: 8px; line-height: 1.6; }
+.prompt-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.prompt-card.copied { border-color: var(--good); }
+.prompt-card .p-label { flex: 1; font-size: 13px; line-height: 1.5; }
+.prompt-card .p-sub { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.prompt-card .p-mark { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.prompt-card.copied .p-mark { color: var(--good-text); font-weight: 700; }
+
+.memo-area { margin-top: 4px; }
+.memo-area textarea { min-height: 90px; }
+.memo-save { margin-top: 6px; text-align: right; }
+
+/* 相談 */
+.book-check { display: flex; align-items: center; gap: 8px; padding: 7px 2px; font-size: 13px; }
+.book-check input { width: 18px; height: 18px; }
+
+/* ガイド */
+.guide-step { display: flex; gap: 10px; margin-bottom: 12px; }
+.guide-num {
+  flex-shrink: 0;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.guide-step h3 { font-size: 13px; margin-bottom: 3px; }
+.guide-step p { font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+.link-row {
+  display: block;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  background: var(--surface-1);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.link-row span { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.warn-box {
+  border: 1px solid var(--warn);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  background: var(--surface-1);
+}
+.warn-box strong { color: var(--ink); }
+
+/* ナビ・トースト */
+nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav button {
+  flex: 1;
+  background: none;
+  padding: 10px 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+nav button .ico { font-size: 20px; }
+nav button.on { color: var(--accent); font-weight: 700; }
+#toast {
+  position: fixed;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--ink);
+  color: var(--page);
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all .25s;
+  max-width: 86vw;
+  text-align: center;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.empty { text-align: center; color: var(--muted); font-size: 13px; padding: 26px 0; line-height: 1.8; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📖 対話読書</h1>
+  <div class="sub">本と話す読書ワークフロー — Gemini Notebook 伴走ツール</div>
+</header>
+<main>
+
+<!-- ============ 本棚 ============ -->
+<section id="view-shelf" class="view active">
+  <div class="card">
+    <h2>本を追加</h2>
+    <div class="add-form">
+      <input type="text" id="in-title" placeholder="書名（必須）">
+      <input type="text" id="in-author" placeholder="著者（任意）">
+      <select id="in-status">
+        <option value="tsundoku">積読（これから資産化）</option>
+        <option value="reading">読書中</option>
+        <option value="done">読了</option>
+      </select>
+      <button class="btn-primary" onclick="addBook()">本棚に追加</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>本棚</h2>
+    <div id="shelf-list"></div>
+  </div>
+</section>
+
+<!-- ============ 詳細 ============ -->
+<section id="view-detail" class="view"></section>
+
+<!-- ============ 積読相談 ============ -->
+<section id="view-consult" class="view">
+  <div class="card">
+    <h2>💬 本棚に相談する</h2>
+    <p class="note" style="margin-bottom:10px">
+      いまの悩みを入力すると、本棚の本リスト入りの相談プロンプトを作ります。
+      積読の Fast Research をまとめた「積読本棚ノートブック」に貼るのが最強です。
+    </p>
+    <textarea id="in-worry" placeholder="例：部下への任せ方で悩んでいる"></textarea>
+    <div style="margin:10px 0 4px; font-size:12px; color:var(--muted)">相談に含める本（タップで除外/追加）</div>
+    <div id="consult-books"></div>
+    <button class="btn-primary" style="width:100%; margin-top:10px" onclick="copyConsult()">相談プロンプトをコピー</button>
+  </div>
+</section>
+
+<!-- ============ ガイド ============ -->
+<section id="view-guide" class="view">
+  <div class="card">
+    <h2>🧭 ワークフロー（読んで、考えて、動く）</h2>
+    <div class="guide-step"><div class="guide-num">1</div><div>
+      <h3>読む前 — 運命の1冊を見極める</h3>
+      <p>Gemini Notebook の Fast Research にプロンプト3本を投げて、書評・批判・応用事例まで本の全体像を先に手に入れる。「良い本」ではなく「今の自分に必要な本」かを判断。積読は Fast Research して資産としてストック。</p>
+    </div></div>
+    <div class="guide-step"><div class="guide-num">2</div><div>
+      <h3>読む — 本を丸ごとAIに渡す</h3>
+      <p>スキャナー（またはスマホ撮影＋OCR）で本文をテキスト化してノートブックへ。答えの根拠がすべて本文になり、著者と対話している状態が生まれる。まずは核心の章だけでもOK。</p>
+    </div></div>
+    <div class="guide-step"><div class="guide-num">3</div><div>
+      <h3>読んだ後 — 壁打ちで知識を知恵に</h3>
+      <p>壁打ちプロンプト3本（影響分析・行動変換・あえて疑う）を投げる。読前と同じ質問をもう一度ぶつけて成長を確認。マインドマップと音声解説で復習。</p>
+    </div></div>
+    <div class="guide-step"><div class="guide-num">4</div><div>
+      <h3>対話する・遊ぶ — 本がメンターになる</h3>
+      <p>賢者プロンプトで本と人格対話（「対話」「深掘り」「相談」「行動」コマンド）。ゲーム化プロンプトで本の世界に主人公として入り込む（「開始」で起動）。</p>
+    </div></div>
+  </div>
+  <div class="card">
+    <h2>🔗 ツール</h2>
+    <a class="link-row" href="https://notebooklm.google.com" target="_blank" rel="noopener">Gemini Notebook（NotebookLM）を開く<span>ノートブック作成・Fast Research・チャットはここで</span></a>
+    <a class="link-row" href="https://gemini.google.com/gem/1h3YXoeGv7nBUnWR6-omzg201vHY3On9r?usp=sharing" target="_blank" rel="noopener">擬人化読書Gem<span>本の思想から5つの対話パーソナリティを自動生成</span></a>
+    <a class="link-row" href="https://gemini.google.com/gem/1VgNg4lSf4uWXw6QXq4yrPZ6z-Ajo2xCw?usp=sharing" target="_blank" rel="noopener">NotebookLMで遊ぼう！Gem<span>資料に合う遊び方を5つ提案してくれる</span></a>
+  </div>
+  <div class="card">
+    <h2>⚖️ 著作権の約束</h2>
+    <div class="warn-box">
+      <strong>OK：</strong>自分で買った本を、自分が読むためにスキャン・撮影してアップロード（私的使用）。<br>
+      <strong>NG：</strong>書籍の全文を入れたノートブックを<strong>第三者に共有すること</strong>。共有機能は便利だが、書籍ノートブックだけは絶対に共有しない。<br>
+      仕事の資料は社外秘・個人情報を匿名化してから（顧客名→「A社」）。
+    </div>
+  </div>
+  <div class="card">
+    <h2>🗂 データ</h2>
+    <p class="note" style="margin-bottom:10px">気づきメモごとJSONで書き出し／取り込みできます（機種変更・バックアップ用）。</p>
+    <div style="display:flex; gap:8px">
+      <button class="btn-ghost" style="flex:1" onclick="exportData()">書き出し</button>
+      <button class="btn-ghost" style="flex:1" onclick="importData()">取り込み</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<nav>
+  <button id="nav-shelf" class="on" onclick="showView('shelf')"><span class="ico">📚</span>本棚</button>
+  <button id="nav-consult" onclick="showView('consult')"><span class="ico">💬</span>相談</button>
+  <button id="nav-guide" onclick="showView('guide')"><span class="ico">🧭</span>ガイド</button>
+</nav>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const LS_KEY = "dialog-reading-v1";
+let state = load();
+let currentBookId = null;
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || { books: [] }; }
+  catch { return { books: [] }; }
+}
+function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._tm);
+  t._tm = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+/* ============ プロンプト定義 ============ */
+const SAGE_PROMPT = `あなたは、このノートブックに収録された書籍そのものが人格を持った存在「賢者」です。著者の思想・哲学・知見をすべて宿した、対話できる一冊の本として振る舞ってください。
+
+【役割】
+読者が情報を受け取るだけで終わらせず、対話を通じて悩みや課題を深掘りし、目標達成への道筋を見つけられるよう導く。回答は常にソース（書籍）に基づき、引用を示しながら語る。最終ゴールは、知識を「使える知恵」と「具体的な行動」に変えること。
+
+【人格・口調】
+・一人称は「私」。温かく、しかし芯のある語り口。
+・読者を「あなた」と呼び、対等な対話者として接する。
+・説教はせず、問いを投げかけ、読者自身が答えにたどり着くのを助ける。
+・書籍にないことは「この本には書かれていませんが」と必ず明示する。
+
+【モード切替コマンド】
+・対話 → 賢者として自己紹介し「今、あなたの心にあるものは何ですか？」と問いかけて対話を始める
+・深掘り → 悩みを一問ずつ掘り下げ、5往復を目安に「悩みの本質」を引用とともに言語化する
+・相談 → 目標を確認し、書籍の知見に基づく実行可能なアドバイスを引用付きで示し、最後に「最初の一歩」を1つ提案する
+・行動 → 対話を踏まえ、明日から実践できる行動を3つ、書籍の根拠とともに提示する
+・STATUS → 現在のモードと、扱ったテーマ・気づきを振り返る
+・DEFAULT → 通常モード（引用付き解説）に戻る
+
+【共通ルール】
+・どのモードでも回答は必ずソースに基づき、引用を示す。
+・専門用語は読者のレベルに合わせてかみ砕く。
+・毎回ひとつだけ問いを残し、対話が続くようにする。`;
+
+const GAME_PROMPT = `あなたは、このノートブックに収められた資料の世界を舞台にした「体験ゲーム」のゲームマスターです。資料の内容（登場人物・出来事・概念・専門知識）をすべて把握し、その世界をプレイヤーが中から体験できる物語として進行してください。
+
+【役割】
+プレイヤー（私）を資料の世界に招き入れ、主人公として物語や課題を体験させる。情報を一方的に説明するのではなく、「選択」と「行動」を通じて、プレイヤー自身が資料の中身を深く理解し、記憶に残せるように導く。
+
+【人格・口調】
+・臨場感のある語り手として、情景が目に浮かぶように描写する。
+・プレイヤーを「あなた」と呼び、世界の登場人物として接する。
+・説明口調を避け、物語の中にさりげなく資料の知識を織り込む。
+
+【世界の宣言（最初に必ず行う）】
+このノートブックがどんな世界なのかを2〜3行で描写し、プレイヤーがどんな立場・役割で参加するのかを提示する。
+
+【進行ルール】
+・シーンを進めるたびに、必ず次の選択肢を提示する。
+　【1】〜【3】の行動をあなたが用意し、加えて【4：自由に行動を入力】を必ず置く。
+・プレイヤーが1〜3を選んでも、4で自由に入力しても、その選択に応じて展開を分岐させる。
+・展開は必ず資料（ソース）の内容に基づく。資料にないことを創作した場合は「※ここは創作です」と明示する。
+
+【コマンド】
+・開始 → 世界を宣言し、最初のシーンと選択肢を提示する
+・調べる → 今いる場面に関係する資料の知識を、世界観を保ったまま教える
+・進む → 物語を次の展開へ進める
+・STATUS → 今の状況・これまでの選択・たどり着いた気づきを振り返る
+・戻る → 通常のノートに戻る（ゲーム終了）
+
+【共通ルール】
+・どの場面でも、回答は必ず資料の内容に基づく。
+・専門用語はプレイヤーのレベルに合わせてかみくだく。
+・1回の応答は長くしすぎず、選択肢で必ず続きをうながす。
+
+それでは「開始」と入力されたら、この世界の扉を開いてください。`;
+
+const PHASES = [
+  {
+    id: "before",
+    icon: "🔍",
+    title: "読む前 — Fast Research",
+    desc: "Gemini Notebook でノートブックを作り、Fast Research に順番に貼る。全体像を先に手に入れる。",
+    prompts: [
+      { id: "fr1", label: "① 要約・解説・書評・批判を網羅調査",
+        text: t => `書籍『${t}』の要約・詳細な解説・書評・批判的意見を網羅的に調査して` },
+      { id: "fr2", label: "② 著者インタビュー・講演・論争点",
+        text: t => `書籍『${t}』に対する著者のインタビュー、講演内容、主要な論争点を収集して` },
+      { id: "fr3", label: "③ 実務への応用事例・実践レポート",
+        text: t => `書籍『${t}』の内容を実務に応用した具体的な事例や、実践レポートを探して` },
+      { id: "core1", label: "④ 核心メッセージを3つ聞く（チャット欄）", sub: "読了後に同じ質問をして成長を確認する",
+        text: () => `この本の核心となるメッセージを3つ、具体的な根拠と共に教えて` },
+    ],
+  },
+  {
+    id: "during",
+    icon: "📷",
+    title: "読む — 全文をノートブックへ",
+    desc: "スキャナーかスマホ撮影＋OCRで本文をテキスト化してアップロード。まずは核心の章だけでもOK。自分用のみ・共有NG。",
+    prompts: [
+      { id: "scan", label: "✅ 全文（or 核心の章）を取込済みにする", sub: "タップで取込完了マーク", check: true },
+      { id: "readhelp", label: "難所の読解を頼む",
+        text: () => `この章の要点を3つにまとめて。専門用語はかみ砕いて説明して` },
+    ],
+  },
+  {
+    id: "after",
+    icon: "🥊",
+    title: "読んだ後 — 3つの壁打ち",
+    desc: "読了したらノートブックのチャットに順番に投げる。3つ目の「あえて疑う」がいちばん効く。",
+    prompts: [
+      { id: "k1", label: "① 自分の仕事への影響を分析",
+        text: () => `この本で最も自分の仕事に影響する主張はどれか、理由と共に分析して` },
+      { id: "k2", label: "② 明日から変える行動を3つ",
+        text: () => `この本の内容を踏まえて、私が明日から変えるべき具体的な行動を3つ提案して` },
+      { id: "k3", label: "③ あえて本を疑う",
+        text: () => `この本の著者の主張と矛盾しそうな考え方や事例はある？\nあるなら、その矛盾をどう解釈すべきか分析して` },
+      { id: "core2", label: "④ もう一度、核心メッセージを3つ", sub: "読前の答えと比べて成長を実感する",
+        text: () => `この本の核心となるメッセージを3つ、具体的な根拠と共に教えて` },
+      { id: "map", label: "✅ マインドマップ生成（レポート→マインドマップ）", sub: "タップで完了マーク", check: true },
+      { id: "audio", label: "✅ 音声解説で聴く復習（通勤・家事・ジム）", sub: "タップで完了マーク", check: true },
+    ],
+  },
+  {
+    id: "play",
+    icon: "🧙",
+    title: "対話する・遊ぶ",
+    desc: "カスタムプロンプトを貼って、貼ったら「対話」または「開始」と打つだけ。",
+    prompts: [
+      { id: "sage", label: "賢者プロンプト（本がメンターになる）", sub: "貼ったら「対話」→ 深掘り/相談/行動 で切替",
+        text: () => SAGE_PROMPT },
+      { id: "game", label: "ゲーム化プロンプト（本の世界に入る）", sub: "貼ったら「開始」",
+        text: () => GAME_PROMPT },
+    ],
+  },
+];
+
+/* ============ ビュー切替 ============ */
+function showView(name) {
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.querySelectorAll("nav button").forEach(b => b.classList.remove("on"));
+  document.getElementById("view-" + name).classList.add("active");
+  const nb = document.getElementById("nav-" + name);
+  if (nb) nb.classList.add("on");
+  if (name === "shelf") renderShelf();
+  if (name === "consult") renderConsult();
+  window.scrollTo(0, 0);
+}
+
+/* ============ 本棚 ============ */
+const STATUS_LABEL = { tsundoku: "積読", reading: "読書中", done: "読了" };
+
+function addBook() {
+  const title = document.getElementById("in-title").value.trim();
+  if (!title) { toast("書名を入力してください"); return; }
+  const author = document.getElementById("in-author").value.trim();
+  const status = document.getElementById("in-status").value;
+  state.books.unshift({
+    id: Date.now().toString(36),
+    title, author, status,
+    done: {}, memo: "",
+    added: new Date().toISOString().slice(0, 10),
+  });
+  save();
+  document.getElementById("in-title").value = "";
+  document.getElementById("in-author").value = "";
+  renderShelf();
+  toast(`『${title}』を追加しました`);
+}
+
+function progressOf(b) {
+  const total = PHASES.reduce((n, p) => n + p.prompts.length, 0);
+  const done = Object.values(b.done || {}).filter(Boolean).length;
+  return `${done}/${total} ステップ`;
+}
+
+function renderShelf() {
+  const el = document.getElementById("shelf-list");
+  if (!state.books.length) {
+    el.innerHTML = `<div class="empty">まだ本がありません。<br>積読も堂々と登録してください。<br>積読は負債ではなく資産です 📚</div>`;
+    return;
+  }
+  el.innerHTML = state.books.map(b => `
+    <div class="book-row" onclick="openBook('${b.id}')">
+      <div class="book-main">
+        <div class="book-title">${esc(b.title)}</div>
+        ${b.author ? `<div class="book-author">${esc(b.author)}</div>` : ""}
+        <div class="book-prog">${progressOf(b)}</div>
+      </div>
+      <span class="badge ${b.status}">${STATUS_LABEL[b.status]}</span>
+    </div>`).join("");
+}
+
+/* ============ 詳細 ============ */
+function openBook(id) {
+  currentBookId = id;
+  renderDetail();
+  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.getElementById("view-detail").classList.add("active");
+  window.scrollTo(0, 0);
+}
+
+function renderDetail() {
+  const b = state.books.find(x => x.id === currentBookId);
+  if (!b) { showView("shelf"); return; }
+  const phasesHtml = PHASES.map(p => `
+    <div class="phase">
+      <div class="phase-title">${p.icon} ${p.title}</div>
+      <div class="phase-desc">${p.desc}</div>
+      ${p.prompts.map(pr => {
+        const done = b.done && b.done[pr.id];
+        return `
+        <div class="prompt-card ${done ? "copied" : ""}" onclick="tapPrompt('${pr.id}')">
+          <div class="p-label">${esc(pr.label)}${pr.sub ? `<span class="p-sub">${esc(pr.sub)}</span>` : ""}</div>
+          <div class="p-mark">${done ? "✓ 済" : (pr.check ? "未" : "コピー")}</div>
+        </div>`;
+      }).join("")}
+    </div>`).join("");
+
+  document.getElementById("view-detail").innerHTML = `
+    <div class="detail-head">
+      <button class="back" onclick="showView('shelf')">← 本棚</button>
+      <div class="detail-title">${esc(b.title)}${b.author ? `<div class="book-author">${esc(b.author)}</div>` : ""}</div>
+    </div>
+    <div class="status-row">
+      ${Object.entries(STATUS_LABEL).map(([k, v]) =>
+        `<button class="${b.status === k ? "on" : ""}" onclick="setStatus('${k}')">${v}</button>`).join("")}
+    </div>
+    ${phasesHtml}
+    <div class="card memo-area">
+      <h2>✍️ 気づきメモ</h2>
+      <p class="note" style="margin-bottom:8px">壁打ちや賢者対話で生まれた気づきをここに。あとで読書メモ（Obsidian）に持ち帰る。</p>
+      <textarea id="in-memo" placeholder="対話して気づいたこと・明日やること">${esc(b.memo || "")}</textarea>
+      <div class="memo-save">
+        <button class="btn-ghost" onclick="copyMemo()">メモをコピー</button>
+        <button class="btn-primary" onclick="saveMemo()">保存</button>
+      </div>
+    </div>
+    <div style="text-align:center; margin: 8px 0 20px">
+      <button class="btn-danger" onclick="removeBook()">この本を削除</button>
+    </div>`;
+}
+
+function setStatus(s) {
+  const b = state.books.find(x => x.id === currentBookId);
+  b.status = s;
+  save();
+  renderDetail();
+}
+
+function findPrompt(id) {
+  for (const p of PHASES) for (const pr of p.prompts) if (pr.id === id) return pr;
+  return null;
+}
+
+async function tapPrompt(id) {
+  const b = state.books.find(x => x.id === currentBookId);
+  const pr = findPrompt(id);
+  if (!pr) return;
+  if (pr.check) {
+    b.done[id] = !b.done[id];
+    save();
+    renderDetail();
+    return;
+  }
+  const text = pr.text(b.title);
+  const ok = await copyText(text);
+  if (ok) {
+    b.done[id] = true;
+    save();
+    renderDetail();
+    toast("コピーしました。Gemini Notebook に貼ってください");
+  }
+}
+
+function saveMemo() {
+  const b = state.books.find(x => x.id === currentBookId);
+  b.memo = document.getElementById("in-memo").value;
+  save();
+  toast("メモを保存しました");
+}
+
+async function copyMemo() {
+  const b = state.books.find(x => x.id === currentBookId);
+  const memo = document.getElementById("in-memo").value.trim();
+  if (!memo) { toast("メモが空です"); return; }
+  const ok = await copyText(`## 『${b.title}』対話読書メモ\n\n${memo}`);
+  if (ok) toast("メモをコピーしました");
+}
+
+function removeBook() {
+  const b = state.books.find(x => x.id === currentBookId);
+  if (!confirm(`『${b.title}』を本棚から削除しますか？`)) return;
+  state.books = state.books.filter(x => x.id !== currentBookId);
+  save();
+  showView("shelf");
+}
+
+/* ============ 相談 ============ */
+function renderConsult() {
+  const el = document.getElementById("consult-books");
+  if (!state.books.length) {
+    el.innerHTML = `<div class="empty">本棚が空です。まず本を追加してください。</div>`;
+    return;
+  }
+  el.innerHTML = state.books.map(b => `
+    <label class="book-check">
+      <input type="checkbox" data-id="${b.id}" ${b.status !== "done" ? "checked" : ""}>
+      <span>${esc(b.title)} <span style="color:var(--muted); font-size:11px">（${STATUS_LABEL[b.status]}）</span></span>
+    </label>`).join("");
+}
+
+async function copyConsult() {
+  const worry = document.getElementById("in-worry").value.trim();
+  if (!worry) { toast("悩みを入力してください"); return; }
+  const ids = [...document.querySelectorAll("#consult-books input:checked")].map(c => c.dataset.id);
+  const books = state.books.filter(b => ids.includes(b.id));
+  if (!books.length) { toast("本を1冊以上選んでください"); return; }
+  const list = books.map(b => `- 『${b.title}』${b.author ? `（${b.author}）` : ""}`).join("\n");
+  const text = `いま「${worry}」で悩んでいます。\nこの本棚の中に、この悩みに答えてくれる本はありますか？\n理由と一緒に、読むべき優先順位を付けて教えてください。\n\n【本棚】\n${list}`;
+  const ok = await copyText(text);
+  if (ok) toast("相談プロンプトをコピーしました");
+}
+
+/* ============ データ入出力 ============ */
+function exportData() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `dialog-reading-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importData() {
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "application/json";
+  inp.onchange = () => {
+    const f = inp.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const d = JSON.parse(r.result);
+        if (!Array.isArray(d.books)) throw new Error();
+        state = d;
+        save();
+        renderShelf();
+        toast(`${d.books.length}冊を取り込みました`);
+      } catch { toast("読み込みに失敗しました"); }
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+
+/* ============ クリップボード ============ */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    document.body.removeChild(ta);
+    if (!ok) toast("コピーできませんでした");
+    return ok;
+  }
+}
+
+renderShelf();
+</script>
+</body>
+</html>
