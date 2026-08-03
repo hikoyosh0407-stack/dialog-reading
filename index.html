@@ -189,6 +189,18 @@ button {
 .book-check { display: flex; align-items: center; gap: 8px; padding: 7px 2px; font-size: 13px; }
 .book-check input { width: 18px; height: 18px; }
 
+/* 絞り込み */
+.filter-row { display: flex; gap: 6px; margin: 10px 0 4px; flex-wrap: wrap; }
+.chip {
+  font-size: 12px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--page);
+  color: var(--ink-2);
+}
+.chip.on { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+
 /* ガイド */
 .guide-step { display: flex; gap: 10px; margin-bottom: 12px; }
 .guide-num {
@@ -293,6 +305,8 @@ nav button.on { color: var(--accent); font-weight: 700; }
   </div>
   <div class="card">
     <h2>本棚</h2>
+    <input type="text" id="shelf-search" placeholder="書名・著者で検索" oninput="renderShelf()">
+    <div class="filter-row" id="filter-row"></div>
     <div id="shelf-list"></div>
   </div>
 </section>
@@ -546,13 +560,31 @@ function progressOf(b) {
   return `${done}/${total} ステップ`;
 }
 
+let shelfFilter = "all";
+function setFilter(s) { shelfFilter = s; renderShelf(); }
+
 function renderShelf() {
-  const el = document.getElementById("shelf-list");
+  const listEl = document.getElementById("shelf-list");
+  const filterEl = document.getElementById("filter-row");
   if (!state.books.length) {
-    el.innerHTML = `<div class="empty">まだ本がありません。<br>積読も堂々と登録してください。<br>積読は負債ではなく資産です 📚</div>`;
+    filterEl.innerHTML = "";
+    listEl.innerHTML = `<div class="empty">まだ本がありません。<br>積読も堂々と登録してください。<br>積読は負債ではなく資産です 📚</div>`;
     return;
   }
-  el.innerHTML = state.books.map(b => `
+  const counts = { all: state.books.length, reading: 0, tsundoku: 0, done: 0 };
+  state.books.forEach(b => { counts[b.status] = (counts[b.status] || 0) + 1; });
+  filterEl.innerHTML = [["all", "すべて"], ["reading", "読書中"], ["tsundoku", "積読"], ["done", "読了"]]
+    .map(([k, v]) => `<button class="chip ${shelfFilter === k ? "on" : ""}" onclick="setFilter('${k}')">${v} ${counts[k] || 0}</button>`)
+    .join("");
+  const q = (document.getElementById("shelf-search").value || "").trim().toLowerCase();
+  const books = state.books.filter(b =>
+    (shelfFilter === "all" || b.status === shelfFilter) &&
+    (!q || (b.title + " " + (b.author || "")).toLowerCase().includes(q)));
+  if (!books.length) {
+    listEl.innerHTML = `<div class="empty">該当する本がありません</div>`;
+    return;
+  }
+  listEl.innerHTML = books.map(b => `
     <div class="book-row" onclick="openBook('${b.id}')">
       <div class="book-main">
         <div class="book-title">${esc(b.title)}</div>
@@ -680,15 +712,25 @@ function removeBook() {
 /* ============ 相談 ============ */
 function renderConsult() {
   const el = document.getElementById("consult-books");
-  if (!state.books.length) {
-    el.innerHTML = `<div class="empty">本棚が空です。まず本を追加してください。</div>`;
+  const cands = state.books.filter(b => b.status !== "done");
+  if (!cands.length) {
+    el.innerHTML = `<div class="empty">積読・読書中の本がありません。<br>まず本棚に追加してください。</div>`;
     return;
   }
-  el.innerHTML = state.books.map(b => `
+  el.innerHTML = `
+    <div style="display:flex; gap:8px; margin-bottom:6px">
+      <button class="btn-ghost" style="flex:1; padding:6px" onclick="consultCheckAll(true)">全選択</button>
+      <button class="btn-ghost" style="flex:1; padding:6px" onclick="consultCheckAll(false)">全解除</button>
+    </div>
+    ${cands.map(b => `
     <label class="book-check">
-      <input type="checkbox" data-id="${b.id}" ${b.status !== "done" ? "checked" : ""}>
+      <input type="checkbox" data-id="${b.id}" checked>
       <span>${esc(b.title)} <span style="color:var(--muted); font-size:11px">（${STATUS_LABEL[b.status]}）</span></span>
-    </label>`).join("");
+    </label>`).join("")}`;
+}
+
+function consultCheckAll(on) {
+  document.querySelectorAll("#consult-books input").forEach(c => { c.checked = on; });
 }
 
 async function copyConsult() {
@@ -713,6 +755,23 @@ function exportData() {
   URL.revokeObjectURL(a.href);
 }
 
+// 既存の本(同じ書名)は進捗・メモを保持し、新しい本だけ追加するマージ方式
+function mergeBooks(d) {
+  if (!Array.isArray(d.books)) throw new Error("invalid");
+  const existing = new Set(state.books.map(b => b.title));
+  const added = d.books.filter(b => b && b.title && !existing.has(b.title));
+  added.forEach(b => {
+    if (!b.id) b.id = Math.random().toString(36).slice(2, 10);
+    if (!b.done) b.done = {};
+    if (!("memo" in b)) b.memo = "";
+    if (!["tsundoku", "reading", "done"].includes(b.status)) b.status = "tsundoku";
+  });
+  state.books = state.books.concat(added);
+  save();
+  renderShelf();
+  toast(`${added.length}冊を追加しました（既存${d.books.length - added.length}冊はスキップ）`);
+}
+
 function importData() {
   const inp = document.createElement("input");
   inp.type = "file";
@@ -722,14 +781,8 @@ function importData() {
     if (!f) return;
     const r = new FileReader();
     r.onload = () => {
-      try {
-        const d = JSON.parse(r.result);
-        if (!Array.isArray(d.books)) throw new Error();
-        state = d;
-        save();
-        renderShelf();
-        toast(`${d.books.length}冊を取り込みました`);
-      } catch { toast("読み込みに失敗しました"); }
+      try { mergeBooks(JSON.parse(r.result)); }
+      catch { toast("読み込みに失敗しました"); }
     };
     r.readAsText(f);
   };
