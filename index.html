@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>対話読書</title>
@@ -50,6 +50,14 @@ body {
   padding-bottom: calc(70px + env(safe-area-inset-bottom));
   -webkit-tap-highlight-color: transparent;
 }
+html, body {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+/* 入力中は下のタブバーを隠す(キーボードの上に浮いて入力欄を隠すのを防ぐ) */
+body.typing nav { display: none; }
 header {
   padding: calc(14px + env(safe-area-inset-top)) 16px 10px;
   text-align: center;
@@ -97,10 +105,11 @@ main { max-width: 560px; margin: 0 auto; padding: 0 14px; }
 .book-prog { font-size: 10px; color: var(--muted); margin-top: 3px; }
 
 .add-form { display: flex; flex-direction: column; gap: 8px; }
+/* iPhoneは16px未満の入力欄をタップすると画面を拡大してズレるので16pxにする */
 input[type=text], textarea, select {
   width: 100%;
   font: inherit;
-  font-size: 14px;
+  font-size: 16px;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -200,6 +209,27 @@ button {
   color: var(--ink-2);
 }
 .chip.on { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+
+/* おすすめ */
+.pick-card {
+  background: var(--surface-1);
+  border: 2px solid var(--accent);
+  border-radius: 14px;
+  padding: 16px 14px;
+  margin-bottom: 12px;
+}
+.pick-label { font-size: 11px; color: var(--accent-deep); font-weight: 700; letter-spacing: .06em; }
+.pick-title { font-size: 17px; font-weight: 700; line-height: 1.45; margin: 6px 0 2px; }
+.pick-why { font-size: 12px; color: var(--ink-2); line-height: 1.7; margin: 10px 0 12px; }
+.pick-why b { color: var(--ink); }
+.pick-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pick-actions button { flex: 1; min-width: 120px; }
+.reading-now { border: 1px solid var(--warn); }
+.theme-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.runner { display: flex; align-items: center; gap: 8px; padding: 9px 2px; border-bottom: 1px solid var(--grid); font-size: 13px; }
+.runner:last-child { border-bottom: none; }
+.runner .r-main { flex: 1; min-width: 0; line-height: 1.45; }
+.runner .r-why { display: block; font-size: 10px; color: var(--muted); }
 
 /* ガイド */
 .guide-step { display: flex; gap: 10px; margin-bottom: 12px; }
@@ -329,6 +359,22 @@ nav button.on { color: var(--accent); font-weight: 700; }
   </div>
 </section>
 
+<!-- ============ おすすめ ============ -->
+<section id="view-pick" class="view">
+  <div id="pick-main"></div>
+  <div class="card">
+    <h2>🎯 いまのテーマ</h2>
+    <p class="note" style="margin-bottom:8px">オンのテーマに合う積読から選びます（書名・著者で判定）。</p>
+    <div class="theme-row" id="theme-row"></div>
+    <input type="text" id="in-extra" placeholder="追加キーワード（例：睡眠 リーダー）スペース区切り" onchange="saveExtra()">
+  </div>
+  <div class="card">
+    <h2>🤖 AIにもっと深く選んでもらう</h2>
+    <p class="note" style="margin-bottom:10px">読了本・テーマ・積読の上位候補を入れたプロンプトを作ります。Gemini / Claude に貼ると、理由と「最初に読む章」つきで1冊に絞ってくれます。</p>
+    <button class="btn-ghost" style="width:100%" onclick="copyPickPrompt()">おすすめ相談プロンプトをコピー</button>
+  </div>
+</section>
+
 <!-- ============ ガイド ============ -->
 <section id="view-guide" class="view">
   <div class="card">
@@ -378,6 +424,7 @@ nav button.on { color: var(--accent); font-weight: 700; }
 
 <nav>
   <button id="nav-shelf" class="on" onclick="showView('shelf')"><span class="ico">📚</span>本棚</button>
+  <button id="nav-pick" onclick="showView('pick')"><span class="ico">🎯</span>次の1冊</button>
   <button id="nav-consult" onclick="showView('consult')"><span class="ico">💬</span>相談</button>
   <button id="nav-guide" onclick="showView('guide')"><span class="ico">🧭</span>ガイド</button>
 </nav>
@@ -530,6 +577,7 @@ function showView(name) {
   if (nb) nb.classList.add("on");
   if (name === "shelf") renderShelf();
   if (name === "consult") renderConsult();
+  if (name === "pick") renderPick();
   window.scrollTo(0, 0);
 }
 
@@ -745,6 +793,181 @@ async function copyConsult() {
   if (ok) toast("相談プロンプトをコピーしました");
 }
 
+/* ============ 次の1冊（おすすめ） ============ */
+// 書名・著者にキーワードが入っていればテーマ一致とみなす
+const THEMES = [
+  { id: "diet",   label: "体脂肪・食事", on: true,
+    words: ["ダイエット", "痩", "やせ", "脂肪", "食事", "食べ", "糖質", "栄養", "断食", "肥満", "減量", "腸", "血圧", "オートファジー"] },
+  { id: "body",   label: "筋トレ・体", on: true,
+    words: ["筋肉", "筋トレ", "運動", "体力", "身体", "カラダ", "からだ", "健康", "老化", "睡眠", "ストレッチ", "姿勢"] },
+  { id: "habit",  label: "習慣・継続", on: true,
+    words: ["習慣", "継続", "やり抜", "先延ばし", "自制", "意志", "集中", "仕組み化", "GRIT"] },
+  { id: "kids",   label: "子どもの教育", on: true,
+    words: ["子ども", "子供", "こども", "子育て", "教育", "学力", "親子", "算数", "受験", "小学", "幼児", "読解", "家族"] },
+  { id: "takken", label: "宅建・不動産", on: true,
+    words: ["宅建", "不動産", "民法", "住宅", "土地"] },
+  { id: "learn",  label: "学び方", on: false,
+    words: ["勉強法", "読書術", "独学", "記憶", "ノート術", "学び"] },
+  { id: "work",   label: "仕事・時間術", on: false,
+    words: ["時間術", "時間管理", "タスク", "仕事術", "マネジメント", "段取り"] },
+  { id: "money",  label: "お金", on: false,
+    words: ["お金", "投資", "資産", "節約", "年金", "FIRE", "富"] },
+];
+// 辞典・図鑑・マンガ・小説は「次に読む1冊」から外す
+const NOT_A_READ = /辞典|辞書|図鑑|用語集|COMICS|コミック|DVD|探偵ガリレオ|シリーズ\s*\d/;
+
+function pickState() {
+  if (!state.pick) {
+    state.pick = { themes: THEMES.filter(t => t.on).map(t => t.id), extra: "", skipped: [] };
+  }
+  return state.pick;
+}
+
+function scoreBook(b) {
+  const ps = pickState();
+  const text = b.title + " " + (b.author || "");
+  const why = [];
+  let score = 0;
+  THEMES.filter(t => ps.themes.includes(t.id)).forEach(t => {
+    const hit = t.words.find(w => text.includes(w));
+    if (hit) { score += 3; why.push(`テーマ「${t.label}」（${hit}）`); }
+  });
+  ps.extra.split(/\s+/).filter(Boolean).forEach(w => {
+    if (text.includes(w)) { score += 3; why.push(`キーワード「${w}」`); }
+  });
+  const days = b.added ? (Date.now() - new Date(b.added).getTime()) / 864e5 : 9999;
+  if (days <= 90) { score += 2; why.push(`${b.added.slice(0, 7)}に登録＝いまの関心`); }
+  else if (days <= 365) { score += 1; }
+  if (NOT_A_READ.test(b.title)) score -= 10;
+  return { b, score, why };
+}
+
+function rankCandidates() {
+  const skipped = new Set(pickState().skipped);
+  return state.books
+    .filter(b => b.status === "tsundoku" && !skipped.has(b.id))
+    .map(scoreBook)
+    .filter(r => r.score > 0)
+    .sort((x, y) => y.score - x.score || (y.b.added || "").localeCompare(x.b.added || ""));
+}
+
+function renderPick() {
+  const ps = pickState();
+  document.getElementById("theme-row").innerHTML = THEMES.map(t =>
+    `<button class="chip ${ps.themes.includes(t.id) ? "on" : ""}" onclick="toggleTheme('${t.id}')">${t.label}</button>`).join("");
+  document.getElementById("in-extra").value = ps.extra;
+
+  const reading = state.books.filter(b => b.status === "reading");
+  const ranked = rankCandidates();
+  const top = ranked[0];
+  let html = "";
+
+  if (reading.length) {
+    html += `<div class="card reading-now">
+      <h2>📖 いま読書中</h2>
+      <p class="note" style="margin-bottom:8px">次の本の前に、まずこちらを読み切りましょう。</p>
+      ${reading.map(b => `<div class="runner"><div class="r-main">${esc(b.title)}</div>
+        <button class="btn-ghost" style="padding:6px 10px" onclick="openBook('${b.id}')">開く</button></div>`).join("")}
+    </div>`;
+  }
+
+  if (!top) {
+    html += `<div class="card"><div class="empty">テーマに合う積読が見つかりません。<br>テーマを増やすか、キーワードを足してください。
+      ${ps.skipped.length ? `<br><br><button class="btn-ghost" onclick="resetSkipped()">パスした${ps.skipped.length}冊を候補に戻す</button>` : ""}</div></div>`;
+    document.getElementById("pick-main").innerHTML = html;
+    return;
+  }
+
+  html += `<div class="pick-card">
+    <div class="pick-label">${reading.length ? "読み終えたら、次はこれ" : "次に読む1冊"}</div>
+    <div class="pick-title">${esc(top.b.title)}</div>
+    ${top.b.author ? `<div class="book-author">${esc(top.b.author)}</div>` : ""}
+    <div class="pick-why"><b>選んだ理由：</b>${top.why.map(esc).join(" ／ ")}</div>
+    <div class="pick-actions">
+      <button class="btn-primary" onclick="startPick('${top.b.id}')">これを読む</button>
+      <button class="btn-ghost" onclick="skipPick('${top.b.id}', false)">今回はパス</button>
+      <button class="btn-ghost" onclick="skipPick('${top.b.id}', true)">もう読んだ</button>
+    </div>
+  </div>`;
+
+  const runners = ranked.slice(1, 4);
+  if (runners.length) {
+    html += `<div class="card"><h2>ほかの候補</h2>
+      ${runners.map(r => `<div class="runner"><div class="r-main">${esc(r.b.title)}
+        <span class="r-why">${r.why.map(esc).join(" ／ ")}</span></div>
+        <button class="btn-ghost" style="padding:6px 10px" onclick="startPick('${r.b.id}')">読む</button></div>`).join("")}
+      <p class="note" style="margin-top:8px">候補 ${ranked.length}冊${ps.skipped.length ? ` ・ パス済み ${ps.skipped.length}冊 <a href="#" onclick="resetSkipped(); return false">戻す</a>` : ""}</p>
+    </div>`;
+  }
+  document.getElementById("pick-main").innerHTML = html;
+}
+
+function toggleTheme(id) {
+  const ps = pickState();
+  ps.themes = ps.themes.includes(id) ? ps.themes.filter(x => x !== id) : ps.themes.concat(id);
+  save();
+  renderPick();
+}
+
+function saveExtra() {
+  pickState().extra = document.getElementById("in-extra").value.trim();
+  save();
+  renderPick();
+}
+
+function startPick(id) {
+  const b = state.books.find(x => x.id === id);
+  b.status = "reading";
+  save();
+  toast(`『${b.title}』を読書中にしました`);
+  openBook(id);
+}
+
+// alreadyRead=true なら読了に、false なら今回のおすすめから外すだけ
+function skipPick(id, alreadyRead) {
+  const b = state.books.find(x => x.id === id);
+  if (alreadyRead) {
+    b.status = "done";
+    toast(`『${b.title}』を読了にしました`);
+  } else {
+    pickState().skipped.push(id);
+  }
+  save();
+  renderPick();
+}
+
+function resetSkipped() {
+  pickState().skipped = [];
+  save();
+  renderPick();
+}
+
+async function copyPickPrompt() {
+  const ps = pickState();
+  const themes = THEMES.filter(t => ps.themes.includes(t.id)).map(t => t.label);
+  if (ps.extra) themes.push(ps.extra);
+  const fmt = b => `- 『${b.title}』${b.author ? `（${b.author}）` : ""}`;
+  const done = state.books.filter(b => b.status === "done").slice(0, 40);
+  const reading = state.books.filter(b => b.status === "reading");
+  const cands = rankCandidates().slice(0, 30).map(r => r.b);
+  if (!cands.length) { toast("候補の積読がありません"); return; }
+  const text = `次に読む本を、下の【積読候補】から1冊だけ選んでください。
+
+【いまのテーマ】${themes.join("、") || "（指定なし）"}
+【読み方】読んだら子どもに1分で説明できるところまで持っていきたい
+${reading.length ? `\n【いま読書中】\n${reading.map(fmt).join("\n")}\n` : ""}${done.length ? `\n【最近読んだ本】\n${done.map(fmt).join("\n")}\n` : ""}
+【積読候補】
+${cands.map(fmt).join("\n")}
+
+答え方:
+1. 選んだ1冊と、いまの自分に効く理由（読んだ本とのつながりも）
+2. 最初に読むべき章（全部読まなくていい前提で）
+3. 読み終えたら子どもに1分で話せそうなこと
+候補を複数並べず、必ず1冊に決めてください。`;
+  const ok = await copyText(text);
+  if (ok) toast("コピーしました。Gemini か Claude に貼ってください");
+}
+
 /* ============ データ入出力 ============ */
 function exportData() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
@@ -811,6 +1034,11 @@ async function copyText(text) {
 }
 
 /* ============ URLパラメータで本を追加 (?add=書名&author=著者&status=done) ============ */
+document.addEventListener("focusin", e => {
+  if (e.target.matches("input[type=text], textarea")) document.body.classList.add("typing");
+});
+document.addEventListener("focusout", () => document.body.classList.remove("typing"));
+
 (function handleAddParam() {
   const params = new URLSearchParams(location.search);
   const title = (params.get("add") || "").trim();
