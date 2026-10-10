@@ -813,8 +813,8 @@ const THEMES = [
   { id: "money",  label: "お金", on: false,
     words: ["お金", "投資", "資産", "節約", "年金", "FIRE", "富"] },
 ];
-// 辞典・図鑑・マンガ・小説は「次に読む1冊」から外す
-const NOT_A_READ = /辞典|辞書|図鑑|用語集|COMICS|コミック|DVD|探偵ガリレオ|シリーズ\s*\d/;
+// 辞典・図鑑・マンガ・小説・問題集・単語帳は「次に読む1冊」から外す
+const NOT_A_READ = /辞典|辞書|図鑑|用語集|COMICS|コミック|DVD|探偵ガリレオ|シリーズ\s*\d|問題集|参考書|自由自在|単語|熟語|パス単|TOEIC|入試|練習帳/;
 
 function pickState() {
   if (!state.pick) {
